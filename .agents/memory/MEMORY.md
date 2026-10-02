@@ -1,0 +1,1 @@
+- [Expo dependency installation](expo-package-install.md) — use the app-scoped Expo installer for SDK-compatible native dependencies in the pnpm monorepo.
