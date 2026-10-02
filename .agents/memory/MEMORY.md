@@ -1,1 +1,2 @@
 - [Expo dependency installation](expo-package-install.md) — use the app-scoped Expo installer for SDK-compatible native dependencies in the pnpm monorepo.
+- [Remote terminal hosting](remote-terminal-hosting.md) — Replit SSH targets development Repls; Vercel Sandbox is distinct from function deployments.

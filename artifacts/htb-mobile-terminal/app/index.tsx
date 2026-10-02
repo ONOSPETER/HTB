@@ -30,6 +30,7 @@ type Machine = {
   authType: AuthType;
 };
 type Credential = { password: string } | { privateKey: string; passphrase?: string };
+type ConnectionTarget = 'lab' | 'replit' | 'server';
 type Screen =
   | { kind: 'home' }
   | { kind: 'add' }
@@ -207,7 +208,7 @@ export default function HomeScreen() {
             <Feather name="terminal" size={15} color={colors.primary} />
           </View>
           <View style={styles.brandText}>
-            <Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>AUTHORIZED LAB ACCESS</Text>
+            <Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>DIRECT SSH · AUTHORIZED HOSTS</Text>
             <Text style={[styles.appTitle, { color: colors.primary }]}>HTB MOBILE TERMINAL</Text>
           </View>
           <Pressable
@@ -255,7 +256,7 @@ export default function HomeScreen() {
             </View>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No machines saved</Text>
             <Text style={[styles.bodyCopy, { color: colors.mutedForeground }]}>
-              Add an authorized lab machine to organize its SSH connection and terminals.
+              Add an HTB target, Replit development workspace, or other reachable SSH server.
             </Text>
             <Pressable
               testID="empty-add-machine"
@@ -341,10 +342,20 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
+        <View style={[styles.hostInfo, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Feather name="info" size={16} color={colors.primary} />
+          <View style={styles.hostInfoContent}>
+            <Text style={[styles.hostInfoTitle, { color: colors.foreground }]}>What can this app reach?</Text>
+            <Text style={[styles.hostInfoText, { color: colors.mutedForeground }]}>
+              An SSH server such as a Replit development shell, HTB target, or your own VPS. A published Replit or Vercel URL is not itself an SSH terminal. The account on the server controls root and sudo access.
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.footerNote}>
           <Feather name="shield" size={13} color={colors.mutedForeground} />
           <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-            For authorized HTB and CTF labs only
+            For systems you own or are authorized to access
           </Text>
         </View>
       </ScrollView>
@@ -370,10 +381,27 @@ function AddMachineScreen({
   const [port, setPort] = useState('22');
   const [username, setUsername] = useState('');
   const [authType, setAuthType] = useState<AuthType>('password');
+  const [target, setTarget] = useState<ConnectionTarget>('lab');
   const [secret, setSecret] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [saving, setSaving] = useState(false);
   const secureCredentialEntry = Platform.OS !== 'web';
+
+  const selectTarget = (next: ConnectionTarget) => {
+    setTarget(next);
+    setWorkspace(next === 'lab' ? 'HTB' : next === 'replit' ? 'Replit' : 'Servers');
+    setPort('22');
+    setAuthType(next === 'lab' ? 'password' : 'key');
+    setSecret('');
+    setPassphrase('');
+  };
+
+  const targetHint =
+    target === 'replit'
+      ? 'Replit SSH: add this key’s public key in the SSH pane, then copy the hostname and username from Connect → Connect manually. Use port 22. This is the development Repl, not a published deployment; it has standard-user access, not root.'
+      : target === 'server'
+        ? 'Use a reachable machine running an SSH server. A Vercel Function is not an SSH host; a Vercel Sandbox is a separate VM product that would need an authenticated gateway.'
+        : 'For HTB targets, connect the phone to the HTB VPN first. Use only authorized lab machines.';
 
   const submit = async () => {
     if (!secureCredentialEntry) {
@@ -442,8 +470,39 @@ function AddMachineScreen({
         <View style={[styles.formIntro, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <Feather name="shield" size={17} color={colors.primary} />
           <Text style={[styles.formIntroText, { color: colors.mutedForeground }]}>
-            Connect only to systems you own or are authorized to use.
+            Choose a target. This app connects to an SSH server, not to a deployment URL.
           </Text>
+        </View>
+        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>CONNECTION TARGET</Text>
+        <View style={styles.targetChoices}>
+          {([
+            { id: 'lab', label: 'HTB / CTF' },
+            { id: 'replit', label: 'Replit' },
+            { id: 'server', label: 'Other SSH' },
+          ] as const).map((option) => {
+            const selected = target === option.id;
+            return (
+              <Pressable
+                key={option.id}
+                testID={`target-${option.id}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => selectTarget(option.id)}
+                style={[
+                  styles.targetChoice,
+                  { borderColor: selected ? colors.primary : colors.border },
+                  selected && { backgroundColor: colors.secondary },
+                ]}
+              >
+                <Text style={[styles.targetChoiceText, { color: selected ? colors.primary : colors.foreground }]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={[styles.targetHint, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Text style={[styles.targetHintText, { color: colors.mutedForeground }]}>{targetHint}</Text>
         </View>
         <FormField
           label="WORKSPACE"
@@ -903,6 +962,10 @@ const styles = StyleSheet.create({
   previewDot: { width: 6, height: 6, borderRadius: 3 },
   previewLabel: { flex: 1, fontFamily: mono, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
   previewTitle: { fontFamily: mono, fontSize: 13, fontWeight: '700' },
+  hostInfo: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderWidth: 1, borderRadius: 10, padding: 12 },
+  hostInfoContent: { flex: 1, gap: 5 },
+  hostInfoTitle: { fontFamily: mono, fontSize: 11, fontWeight: '700' },
+  hostInfoText: { fontSize: 10, lineHeight: 15 },
   footerNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingTop: 1 },
   footerText: { fontFamily: mono, fontSize: 9 },
   subHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, paddingBottom: 14, gap: 9 },
@@ -912,6 +975,11 @@ const styles = StyleSheet.create({
   formContent: { paddingHorizontal: 18, paddingTop: 17, gap: 14 },
   formIntro: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 9, padding: 12, marginBottom: 1 },
   formIntroText: { flex: 1, fontSize: 11, lineHeight: 16 },
+  targetChoices: { flexDirection: 'row', gap: 7 },
+  targetChoice: { minHeight: 39, flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: 7, paddingHorizontal: 5 },
+  targetChoiceText: { fontFamily: mono, fontSize: 9, fontWeight: '700' },
+  targetHint: { borderWidth: 1, borderRadius: 8, padding: 10 },
+  targetHintText: { fontSize: 10, lineHeight: 15 },
   fieldGroup: { gap: 7, flex: 1 },
   fieldLabel: { fontFamily: mono, fontSize: 9, fontWeight: '700', letterSpacing: 1.15 },
   input: {
