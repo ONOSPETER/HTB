@@ -55,6 +55,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@dylankenneally/react-native-ssh-sftp": "^1.11.0",
     "expo-secure-store": "~57.0.4"
   }
 }

@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: vercel-sandboxes
+    description: Authenticated Vercel Sandbox operations
 paths:
   /healthz:
     get:
@@ -24,7 +26,100 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /vercel-sandboxes:
+    post:
+      operationId: createVercelSandbox
+      tags: [vercel-sandboxes]
+      summary: Create a Vercel Sandbox
+      description: Creates a time-limited Vercel Sandbox for an authenticated mobile client.
+      security:
+        - TerminalGateway: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVercelSandboxRequest"
+      responses:
+        "201":
+          description: Sandbox created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VercelSandboxInfo"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid gateway token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Vercel Sandbox CLI could not create the sandbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: API server credentials are not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /vercel-sandboxes/{name}:
+    delete:
+      operationId: stopVercelSandbox
+      tags: [vercel-sandboxes]
+      summary: Stop a Vercel Sandbox
+      description: Stops a sandbox while retaining its filesystem snapshot.
+      security:
+        - TerminalGateway: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 48
+            pattern: "^[a-z0-9][a-z0-9-]*$"
+      responses:
+        "204":
+          description: Sandbox stopped
+        "400":
+          description: Invalid sandbox name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid gateway token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Vercel Sandbox CLI could not stop the sandbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: API server credentials are not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
+  securitySchemes:
+    TerminalGateway:
+      type: http
+      scheme: bearer
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +128,47 @@ components:
           type: string
       required:
         - status
+    CreateVercelSandboxRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 48
+          pattern: "^[a-z0-9][a-z0-9-]*$"
+        image:
+          type: string
+          enum:
+            - vercel/sandbox/node:22
+            - vercel/sandbox/python:3.13
+      required:
+        - name
+        - image
+    VercelSandboxInfo:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        image:
+          type: string
+          enum:
+            - vercel/sandbox/node:22
+            - vercel/sandbox/python:3.13
+        timeout:
+          type: string
+          const: 1h
+      required:
+        - name
+        - image
+        - timeout
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+      required:
+        - message
 
