@@ -58,3 +58,29 @@ export const StopVercelSandboxParams = zod.object({
 export const StopVercelSandboxResponse = zod.void()
 
 
+/**
+ * Issues a short-lived single-use ticket for a WebSocket terminal connection.
+ * @summary Create a one-time Vercel Sandbox terminal ticket
+ */
+export const createVercelSandboxTerminalTicketPathNameMin = 3;
+export const createVercelSandboxTerminalTicketPathNameMax = 48;
+
+
+export const createVercelSandboxTerminalTicketPathNameRegExp = new RegExp('^[a-z0-9][a-z0-9-]*$');
+
+
+export const CreateVercelSandboxTerminalTicketParams = zod.object({
+  "name": zod.coerce.string().min(createVercelSandboxTerminalTicketPathNameMin).max(createVercelSandboxTerminalTicketPathNameMax).regex(createVercelSandboxTerminalTicketPathNameRegExp)
+})
+
+export const createVercelSandboxTerminalTicketBodySudoDefault = false;
+
+export const CreateVercelSandboxTerminalTicketBody = zod.object({
+  "sudo": zod.boolean().default(createVercelSandboxTerminalTicketBodySudoDefault)
+})
+
+export const CreateVercelSandboxTerminalTicketResponse = zod.object({
+  "ticket": zod.string()
+})
+
+

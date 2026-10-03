@@ -10,5 +10,7 @@ export * from './createVercelSandboxRequest';
 export * from './createVercelSandboxRequestImage';
 export * from './errorResponse';
 export * from './healthStatus';
+export * from './terminalTicket';
+export * from './terminalTicketInput';
 export * from './vercelSandboxInfo';
 export * from './vercelSandboxInfoImage';

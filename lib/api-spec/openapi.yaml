@@ -115,6 +115,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /vercel-sandboxes/{name}/terminal-ticket:
+    post:
+      operationId: createVercelSandboxTerminalTicket
+      tags: [vercel-sandboxes]
+      summary: Create a one-time Vercel Sandbox terminal ticket
+      description: Issues a short-lived single-use ticket for a WebSocket terminal connection.
+      security:
+        - TerminalGateway: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 48
+            pattern: "^[a-z0-9][a-z0-9-]*$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerminalTicketInput"
+      responses:
+        "200":
+          description: Single-use terminal ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerminalTicket"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid gateway token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: API server credentials are not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   securitySchemes:
     TerminalGateway:
@@ -171,4 +219,21 @@ components:
           type: string
       required:
         - message
+    TerminalTicketInput:
+      type: object
+      additionalProperties: false
+      properties:
+        sudo:
+          type: boolean
+          default: false
+      required:
+        - sudo
+    TerminalTicket:
+      type: object
+      additionalProperties: false
+      properties:
+        ticket:
+          type: string
+      required:
+        - ticket
 

@@ -13,9 +13,35 @@ import {
 } from '@expo-google-fonts/inter';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as SecureStore from 'expo-secure-store';
+import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
+import { Platform } from 'react-native';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+
+const configuredDomain = process.env.EXPO_PUBLIC_DOMAIN;
+setBaseUrl(
+  configuredDomain
+    ? `${/^https?:\/\//i.test(configuredDomain) ? '' : 'https://'}${configuredDomain.replace(/\/+$/, '')}`
+    : null,
+);
+if (Platform.OS === 'web') {
+  setAuthTokenGetter(null);
+} else {
+  setAuthTokenGetter(async () => {
+    try {
+      const raw = await SecureStore.getItemAsync('htb-mobile-terminal-runtime-settings-v1');
+      if (!raw) return null;
+      const settings: unknown = JSON.parse(raw);
+      if (!settings || typeof settings !== 'object') return null;
+      const token = (settings as Record<string, unknown>).gatewayToken;
+      return typeof token === 'string' && token.trim() ? token.trim() : null;
+    } catch {
+      return null;
+    }
+  });
+}
 
 const queryClient = new QueryClient();
 

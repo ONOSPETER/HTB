@@ -7,9 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "htb-mobile-terminal",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "backgroundColor": "#000000"
-    },
     "ios": {
       "supportsTablet": false
     },
@@ -19,7 +16,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#000000"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

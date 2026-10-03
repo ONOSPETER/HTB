@@ -45,3 +45,11 @@ export interface ErrorResponse {
   message: string;
 }
 
+export interface TerminalTicketInput {
+  sudo: boolean;
+}
+
+export interface TerminalTicket {
+  ticket: string;
+}
+
