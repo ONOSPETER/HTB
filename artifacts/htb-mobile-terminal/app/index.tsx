@@ -57,6 +57,12 @@ function isMachine(value: unknown): value is Machine {
     (row.authType === 'password' || row.authType === 'key');
 }
 
+function isPrivateKeyPem(value: string): boolean {
+  const key = value.trim();
+  return /^-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/.test(key) &&
+    /-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----$/.test(key);
+}
+
 function isActiveVercelSandbox(value: unknown): value is ActiveVercelSandbox {
   if (!value || typeof value !== 'object') return false;
   const row = value as Record<string, unknown>;
@@ -201,7 +207,7 @@ export default function HomeScreen() {
               {rows.map((machine) => <Pressable key={machine.id} onPress={() => openTerminal(machine)} onLongPress={Platform.OS === 'web' ? undefined : () => deleteMachine(machine)} accessibilityRole="button" accessibilityLabel={`Connect to ${machine.name}; long press to delete`} style={({ pressed }) => [styles.machineCard, { borderColor: colors.border, backgroundColor: colors.card }, pressed && styles.pressed]}>
                 <View style={[styles.machineIcon, { backgroundColor: colors.secondary }]}><Feather name="server" size={17} color={colors.primary} /></View>
                 <View style={styles.machineDetails}><Text style={[styles.machineName, { color: colors.foreground }]}>{machine.name}</Text><Text style={[styles.machineAddress, { color: colors.mutedForeground }]}>{machine.username}@{machine.host}:{machine.port}</Text></View>
-                <View style={styles.machineEnd}><Text style={[styles.authTag, { color: colors.mutedForeground }]}>{machine.authType === 'key' ? 'RSA KEY' : 'PASSWORD'}</Text><Feather name="chevron-right" size={17} color={colors.mutedForeground} /></View>
+                <View style={styles.machineEnd}><Text style={[styles.authTag, { color: colors.mutedForeground }]}>{machine.authType === 'key' ? 'KEY' : 'PASSWORD'}</Text><Feather name="chevron-right" size={17} color={colors.mutedForeground} /></View>
               </Pressable>)}
             </View>)}
         <Text style={[styles.kicker, { color: colors.mutedForeground, marginTop: 10 }]}>TOOLS & CONFIGURATION</Text>
@@ -209,7 +215,7 @@ export default function HomeScreen() {
         <MenuRow icon="book-open" title="Connection guide" detail="Replit SSH and Vercel Sandbox setup" onPress={() => setScreen('guide')} />
         <MenuRow icon="sliders" title="API & gateway settings" detail={settings.apiBaseUrl && settings.gatewayToken ? 'Server configured in secure storage' : 'Required to use Vercel Sandbox'} onPress={() => setScreen('settings')} />
         <View style={[styles.hostInfo, { borderColor: colors.border, backgroundColor: colors.card }]}>
-          <Feather name="shield" size={16} color={colors.primary} /><View style={styles.hostInfoContent}><Text style={[styles.hostInfoTitle, { color: colors.foreground }]}>Authorized access only</Text><Text style={[styles.hostInfoText, { color: colors.mutedForeground }]}>Native SSH connects directly from this device. Browser preview never opens SSH. The SSH library does not verify host keys; connections are vulnerable to server impersonation.</Text></View>
+          <Feather name="shield" size={16} color={colors.primary} /><View style={styles.hostInfoContent}><Text style={[styles.hostInfoTitle, { color: colors.foreground }]}>Authorized access only</Text><Text style={[styles.hostInfoText, { color: colors.mutedForeground }]}>Native SSH connects directly from this device. Browser preview never opens SSH. The SSH library cannot verify server host keys, so the app requires an explicit warning confirmation before connecting.</Text></View>
         </View>
       </ScrollView>
     </View>
@@ -264,21 +270,29 @@ function AddMachineScreen({ topInset, bottomInset, onBack, onSave }: { topInset:
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
   const [username, setUsername] = useState('');
+  const [authType, setAuthType] = useState<AuthType>('key');
   const [secret, setSecret] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [saving, setSaving] = useState(false);
   const canEnterCredential = Platform.OS !== 'web';
   const submit = async () => {
-    const parsedPort = Number.parseInt(port, 10);
+    const normalizedPort = port.trim();
+    const parsedPort = Number.parseInt(normalizedPort, 10);
     if (!canEnterCredential) return Alert.alert('Native device required', 'Browser preview stays disconnected. Use the native Android or iOS build to save credentials and connect.');
-    if (!name.trim() || !host.trim() || !username.trim() || !secret.trim()) return Alert.alert('Required fields', 'Enter profile name, host, username, and RSA PEM private key.');
-    if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) return Alert.alert('Invalid port', 'Enter a port between 1 and 65535.');
-    if (!secret.includes('BEGIN') || !secret.includes('PRIVATE KEY')) return Alert.alert('PEM key required', 'Paste the complete RSA private key PEM from your SSH setup.');
+    if (!name.trim() || !host.trim() || !username.trim() || !secret) return Alert.alert('Required fields', `Enter profile name, host, username, and ${authType === 'key' ? 'private key' : 'password'}.`);
+    if (/\s/.test(host.trim())) return Alert.alert('Invalid host', 'Enter a hostname or IP address without spaces.');
+    if (!/^\d{1,5}$/.test(normalizedPort) || !Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) return Alert.alert('Invalid port', 'Enter a port between 1 and 65535.');
+    if (authType === 'key' && !isPrivateKeyPem(secret)) return Alert.alert('Private key format not recognized', 'Paste the complete private key, including its BEGIN and END lines.');
     setSaving(true);
     try {
-      await onSave({ id: makeId(), workspace: workspace.trim() || 'Replit', name: name.trim(), host: host.trim(), port: parsedPort, username: username.trim(), authType: 'key' }, { privateKey: secret, passphrase: passphrase || undefined });
-      setSecret('');
-      setPassphrase('');
+      const credential: Credential = authType === 'key'
+        ? { privateKey: secret, passphrase: passphrase || undefined }
+        : { password: secret };
+      const saved = await onSave({ id: makeId(), workspace: workspace.trim() || 'Replit', name: name.trim(), host: host.trim(), port: parsedPort, username: username.trim(), authType }, credential);
+      if (saved) {
+        setSecret('');
+        setPassphrase('');
+      }
     } catch (error) { Alert.alert('Could not save profile', error instanceof Error ? error.message : 'Secure device storage is unavailable.'); }
     finally { setSaving(false); }
   };
@@ -290,9 +304,25 @@ function AddMachineScreen({ topInset, bottomInset, onBack, onSave }: { topInset:
       <FormField label="PROFILE NAME" value={name} onChangeText={setName} placeholder="My development Repl" />
       <FormField label="SSH HOST" value={host} onChangeText={setHost} placeholder="Host from Connect manually" keyboardType="url" />
       <View style={styles.formRow}><View style={styles.portField}><FormField label="PORT" value={port} onChangeText={setPort} placeholder="22" keyboardType="number-pad" /></View><View style={styles.userField}><FormField label="USERNAME" value={username} onChangeText={setUsername} placeholder="SSH username" /></View></View>
-      <FormField label="RSA PRIVATE KEY (PEM)" value={secret} onChangeText={setSecret} placeholder={canEnterCredential ? 'Paste complete PEM private key' : 'Available in native builds'} multiline editable={canEnterCredential} />
-      <FormField label="KEY PASSPHRASE · OPTIONAL" value={passphrase} onChangeText={setPassphrase} placeholder="Leave blank if key has no passphrase" secureTextEntry editable={canEnterCredential} />
-      <View style={[styles.securityNote, { borderLeftColor: colors.primary }]}><Text style={[styles.bodyCopy, { color: colors.mutedForeground }]}>Private key and passphrase are stored in device SecureStore. This SSH package does not verify host keys; verify the host fingerprint independently before connecting.</Text></View>
+      <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>AUTHENTICATION</Text>
+      <View style={styles.authChoiceRow}>
+        {(['key', 'password'] as const).map((option) => {
+          const selected = authType === option;
+          return <Pressable key={option} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => {
+            setAuthType(option);
+            setSecret('');
+            setPassphrase('');
+          }} style={[styles.authChoice, { borderColor: selected ? colors.primary : colors.border, backgroundColor: colors.card }]}>
+            <Feather name={selected ? 'check-circle' : 'circle'} size={16} color={selected ? colors.primary : colors.mutedForeground} />
+            <Text style={[styles.optionLabel, { color: colors.foreground }]}>{option === 'key' ? 'Private key' : 'Password'}</Text>
+          </Pressable>;
+        })}
+      </View>
+      <FormField label={authType === 'key' ? 'PRIVATE KEY (PEM)' : 'SSH PASSWORD'} value={secret} onChangeText={setSecret}
+        placeholder={canEnterCredential ? (authType === 'key' ? 'Paste complete private key' : 'Password supplied by the host or lab') : 'Available in native builds'}
+        secureTextEntry={authType === 'password'} multiline={authType === 'key'} editable={canEnterCredential} />
+      {authType === 'key' && <FormField label="KEY PASSPHRASE · OPTIONAL" value={passphrase} onChangeText={setPassphrase} placeholder="Leave blank if the key has no passphrase" secureTextEntry editable={canEnterCredential} />}
+      <View style={[styles.securityNote, { borderLeftColor: colors.primary }]}><Text style={[styles.bodyCopy, { color: colors.mutedForeground }]}>The selected password or private key is stored in device SecureStore. This SSH library cannot verify server host keys; the terminal will ask you to acknowledge that limitation before each connection.</Text></View>
       {!canEnterCredential && <Notice icon="monitor" text="Browser preview is disconnected and cannot save SSH credentials. Continue from an Android or iOS native build." />}
       <ActionButton title={saving ? 'Saving securely…' : 'Save profile'} icon="save" onPress={() => void submit()} busy={saving} disabled={!canEnterCredential} />
     </KeyboardAwareScrollViewCompat>
@@ -309,14 +339,14 @@ function GuideScreen({ topInset, bottomInset, onBack }: { topInset: number; bott
   return <View style={[styles.root, { backgroundColor: colors.background }]}><StatusBar barStyle="light-content" backgroundColor={colors.background} />
     <ScreenHeader title="Connection guide" kicker="SETUP / REFERENCE" topInset={topInset} onBack={onBack} />
     <ScrollView style={styles.flex} contentContainerStyle={[styles.formContent, { paddingBottom: bottomInset }]}>
-      <GuideStep number="01" title="Replit SSH" body="Open your Repl’s SSH pane and add or select an RSA public key. In the SSH pane choose Connect → Connect manually. Copy the host and username exactly as shown; use port 22." />
-      <GuideStep number="02" title="Add the profile here" body="Create a profile with those host, username, and port values. Paste the matching private RSA PEM key and its passphrase if set. The private credential stays in SecureStore on this device." />
-      <GuideStep number="03" title="Connect natively" body="Tap the profile on an Android or iOS build to establish direct SSH from the device. Browser preview is disconnected. Replit development shells are standard-user sessions; they do not grant root access." />
-      <Notice warning icon="alert-triangle" text="Host key verification is not provided by the included SSH package. Do not treat this connection as protected against server impersonation. Independently verify the destination and use only systems you are authorized to access." />
-      <View style={[styles.guidePanel, { borderColor: colors.border, backgroundColor: colors.card }]}><Text style={[styles.machineName, { color: colors.foreground }]}>Vercel Sandbox</Text>
-        <Text style={[styles.bodyCopy, { color: colors.mutedForeground }]}>A Vercel Sandbox is a separate short-lived VM, not a published Vercel URL and not an SSH endpoint. On the trusted API server, configure VERCEL_TOKEN and VERCEL_PROJECT_ID; add VERCEL_TEAM_ID when the project belongs to a team. Keep VERCEL_TOKEN in server-side Secrets only. Also configure a separate random TERMINAL_GATEWAY_TOKEN on that server, then enter the same gateway token and the API server origin in this app’s settings. The app requests a short-lived, single-use ticket for its WebSocket. Sandboxes expire after one hour. Sudo is an explicit opt-in.</Text>
+      <GuideStep number="01" title="Get SSH connection details" body="Replit: open the workspace SSH pane, choose Connect manually, add/select your public key, then copy the host and username shown (port 22). Do not use a published app URL. Hack The Box: start an authorized lab machine and use its target IP plus the SSH username and password/key supplied by the lab. Connect Android to the HTB VPN first with the official OpenVPN or WireGuard profile. Other hosts: ask the administrator for the SSH host, port, username, and allowed login method." />
+      <GuideStep number="02" title="Choose password or private key" body="Password: use the SSH password issued by the host administrator or lab; this app stores it only in Android/iOS SecureStore. Key: on a trusted computer, create a key pair (for example, ssh-keygen -t rsa -b 3072 -f ~/.ssh/htb-mobile). Install the .pub file on the authorized account or Replit SSH settings, then paste the matching private-key file here. Enter its passphrase if you set one. Never share the private key." />
+      <GuideStep number="03" title="Connect from the native app" body="Tap a saved profile on Android (or a supported physical iOS device). The browser preview is intentionally disconnected. Replit development shells run as a standard user; HTB machines must be reachable through the phone’s active VPN." />
+      <Notice warning icon="alert-triangle" text="Important: the included SSH library disables host-key verification. It cannot detect a server impersonator or compare a pinned fingerprint. Only use trusted networks and non-sensitive sessions; the app asks you to acknowledge this before each connection." />
+      <View style={[styles.guidePanel, { borderColor: colors.border, backgroundColor: colors.card }]}><Text style={[styles.machineName, { color: colors.foreground }]}>Vercel Sandbox credentials</Text>
+        <Text style={[styles.bodyCopy, { color: colors.mutedForeground }]}>1) Create a Vercel token at vercel.com/account/tokens, preferably scoped and time-limited. 2) Find the Project ID in Vercel Project Settings → General; if it is a team project, also copy the Team ID from team settings. 3) On the trusted API server, add VERCEL_TOKEN, VERCEL_PROJECT_ID, optional VERCEL_TEAM_ID, and a separate random TERMINAL_GATEWAY_TOKEN as server-side Secrets. You can generate the gateway value locally with openssl rand -hex 32. 4) In this app’s API & gateway settings, enter the API server’s HTTPS origin and the same TERMINAL_GATEWAY_TOKEN. Never put VERCEL_TOKEN in the mobile app or repository. Vercel Sandboxes are separate from deployed Vercel URLs and are limited to one hour here; stopping preserves their filesystem snapshot. Sudo is an explicit opt-in.</Text>
       </View>
-      <Notice icon="shield" text="Never put VERCEL_TOKEN in this mobile app. Vercel credentials belong only on the trusted server." />
+      <Notice icon="shield" text="Treat VERCEL_TOKEN, TERMINAL_GATEWAY_TOKEN, passwords, private keys, and passphrases as secrets. Never commit them or send them in chat." />
     </ScrollView>
   </View>;
 }
@@ -514,8 +544,6 @@ function NativeTerminalScreen({ machine, topInset, bottomInset, onBack }: { mach
   const [command, setCommand] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [credentialMissing, setCredentialMissing] = useState(false);
-  const [hostKeyWarning, setHostKeyWarning] = useState(true);
-
   useEffect(() => () => {
     const client = clientRef.current;
     if (client) {
@@ -526,8 +554,7 @@ function NativeTerminalScreen({ machine, topInset, bottomInset, onBack }: { mach
     }
   }, []);
 
-  const connect = async () => {
-    if (Platform.OS === 'web') return Alert.alert('Native build required', 'Browser preview is intentionally disconnected from SSH. Use the Android or iOS app.');
+  const connectDirect = async () => {
     setConnecting(true);
     setStatus('connecting');
     setOutput('');
@@ -560,6 +587,18 @@ function NativeTerminalScreen({ machine, topInset, bottomInset, onBack }: { mach
     } finally { setConnecting(false); }
   };
 
+  const connect = () => {
+    if (Platform.OS === 'web') return Alert.alert('Native build required', 'Browser preview is intentionally disconnected from SSH. Use the Android or iOS app.');
+    Alert.alert(
+      'SSH host identity is not verified',
+      'This SSH library disables host-key verification and cannot confirm the server’s identity. Only continue on a trusted network with a host you expect.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'I understand — connect', style: 'destructive', onPress: () => { void connectDirect(); } },
+      ],
+    );
+  };
+
   const disconnect = () => {
     const client = clientRef.current;
     if (client) {
@@ -582,14 +621,13 @@ function NativeTerminalScreen({ machine, topInset, bottomInset, onBack }: { mach
 
   return <View style={[styles.root, { backgroundColor: colors.background }]}><StatusBar barStyle="light-content" backgroundColor={colors.background} />
     <ScreenHeader title={machine.name} kicker={`${machine.username}@${machine.host}:${machine.port}`} topInset={topInset} onBack={() => { disconnect(); onBack(); }} />
-    <View style={[styles.terminalNotice, { borderColor: colors.border, backgroundColor: colors.card }]}><Feather name="alert-triangle" size={15} color={colors.destructive} /><Text style={[styles.noticeText, { color: colors.foreground }]}>No host-key verification: this SSH package does not verify the server identity. Independently confirm you trust this host.</Text></View>
+    <View style={[styles.terminalNotice, { borderColor: colors.border, backgroundColor: colors.card }]}><Feather name="alert-triangle" size={15} color={colors.destructive} /><Text style={[styles.noticeText, { color: colors.foreground }]}>Host identity is not verified. Confirm before each connection; use trusted networks only.</Text></View>
     {Platform.OS === 'web' ? <View style={styles.nativeDisconnected}><Feather name="smartphone" size={25} color={colors.primary} /><Text style={[styles.machineName, { color: colors.foreground }]}>Native connection only</Text><Text style={[styles.bodyCopy, { color: colors.mutedForeground }]}>Browser preview remains disconnected. Open an Android or iOS native build to connect directly from your device.</Text></View> : <>
       {credentialMissing && <Notice warning icon="key" text="No saved secure credential was found for this profile." />}
       <View style={styles.connectionActions}>
         <View style={styles.statusLine}><View style={[styles.statusDot, { backgroundColor: status === 'connected' ? colors.primary : status === 'error' ? colors.destructive : colors.mutedForeground }]} /><Text style={[styles.kicker, { color: colors.mutedForeground }]}>{status.toUpperCase()}</Text></View>
         {status === 'connected' ? <Pressable onPress={disconnect} style={[styles.stopButton, { borderColor: colors.destructive }]}><Feather name="square" size={14} color={colors.destructive} /><Text style={[styles.stopButtonText, { color: colors.destructive }]}>Disconnect</Text></Pressable> : <Pressable disabled={connecting} onPress={() => void connect()} style={[styles.connectButton, { backgroundColor: colors.primary }, connecting && styles.disabled]}>{connecting ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : <Feather name="link" size={15} color={colors.primaryForeground} />}<Text style={[styles.actionButtonText, { color: colors.primaryForeground }]}>{connecting ? 'Connecting…' : 'Connect directly'}</Text></Pressable>}
       </View>
-      {hostKeyWarning && <Pressable onPress={() => setHostKeyWarning(false)} style={styles.dismissWarning}><Text style={[styles.bodyCopy, { color: colors.mutedForeground }]}>Warning acknowledged for this session</Text><Feather name="x" size={14} color={colors.mutedForeground} /></Pressable>}
       <View style={[styles.nativeTerminal, { borderColor: colors.border, backgroundColor: colors.card }]}>
         <ScrollView style={styles.nativeOutput}><Text selectable style={[styles.outputText, { color: colors.foreground }]}>{output || (status === 'connecting' ? 'Opening direct SSH transport…' : 'SSH shell output will render here after connection.')}</Text></ScrollView>
         <View style={[styles.commandRow, { borderTopColor: colors.border }]}><Text style={[styles.terminalPrompt, { color: colors.primary }]}>$</Text><TextInput value={command} onChangeText={setCommand} editable={status === 'connected'} onSubmitEditing={() => void send()} placeholder={status === 'connected' ? 'Enter command' : 'Connect to enable shell'} placeholderTextColor={colors.mutedForeground} style={[styles.commandInput, { color: colors.foreground }]} autoCapitalize="none" returnKeyType="send" /><Pressable accessibilityRole="button" accessibilityLabel="Send command" disabled={status !== 'connected'} onPress={() => void send()}><Feather name="send" size={16} color={status === 'connected' ? colors.primary : colors.mutedForeground} /></Pressable></View>
@@ -650,6 +688,8 @@ const styles = StyleSheet.create({
   noticeText: { flex: 1, fontSize: 10, lineHeight: 16 },
   fieldGroup: { gap: 7, flex: 1 },
   fieldLabel: { fontFamily: mono, fontSize: 9, fontWeight: '700', letterSpacing: 1.05 },
+  authChoiceRow: { flexDirection: 'row', gap: 10 },
+  authChoice: { minHeight: 44, flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: { minHeight: 45, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontFamily: mono, fontSize: 11 },
   multilineInput: { minHeight: 126, textAlignVertical: 'top' },
   formRow: { flexDirection: 'row', gap: 11 },
@@ -679,7 +719,6 @@ const styles = StyleSheet.create({
   statusLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   connectButton: { minHeight: 40, borderRadius: 7, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  dismissWarning: { paddingHorizontal: 17, paddingVertical: 5, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   nativeTerminal: { flex: 1, minHeight: 280, marginHorizontal: 12, borderWidth: 1, borderRadius: 9, overflow: 'hidden' },
   nativeOutput: { flex: 1, padding: 12 },
   sessionFootnote: { margin: 12, padding: 10, borderWidth: 1, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
