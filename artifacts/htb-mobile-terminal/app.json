@@ -10,7 +10,10 @@
     "ios": {
       "supportsTablet": false
     },
-    "android": {},
+    "android": {
+      "package": "com.onospeter.htbmobileterminal",
+      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
